@@ -12,10 +12,11 @@ ui <- fluidPage(
     )
   ),
   
+  uiOutput("login"),
+  
   div(
     class = "card-container",
     
     uiOutput("card")
-  ),
-  
+  )
 )

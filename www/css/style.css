@@ -3,7 +3,7 @@ body {
 }
 
 .card-container {
-  width: min(90vw, 350px);
+  width: 350px;
   height: 520px;
   margin: 40px auto 20px auto;
   position: relative;
@@ -52,13 +52,15 @@ body {
   margin-top: 15px;
 }
 
-.swipe-button {
-  width: 55px;
-  height: 55px;
-  border-radius: 50%;
-  border: none;
-  margin: 5px;
-  font-size: 24px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+
+/* Phone */
+
+@media (max-width: 500px) {
+
+  .card-container {
+    width: 90vw;
+    height: 520px;
+    margin: 20px auto;
+  }
+
 }

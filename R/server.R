@@ -1,42 +1,95 @@
-cards <- data.frame(
-  name = c(
-    "Movie 1",
-    "Movie 2",
-    "Movie 3"
-  ),
-  
-  image = c(
-    "images/image1.jpg",
-    "images/image2.jpg",
-    "images/image3.jpg"
-  ),
-  
-  rating = c(
-    4.5,
-    3.8,
-    4.9
-  ),
-  
-  review = c(
-    "A really good movie.",
-    "Pretty good and entertaining.",
-    "Excellent! Highly recommended."
-  ),
-  
-  stringsAsFactors = FALSE
-)
-
+active_users <- reactiveVal(character())
 
 server <- function(input, output, session) {
   
+  username <- reactiveVal(NULL)
+  
   current <- reactiveVal(1)
   
+  finished <- reactiveVal(FALSE)
+  
+  # Login screen
+  
+  output$login <- renderUI({
+    
+    if (!is.null(username())) {
+      return(NULL)
+    }
+    
+    div(
+      id = "login",
+      
+      textInput(
+        "username",
+        "Username:"
+      ),
+      
+      actionButton(
+        "start",
+        "Start"
+      )
+    )
+  })
+  
+  
+  # Start button
+  
+  observeEvent(input$start, {
+    
+    req(input$username)
+    
+    name <- trimws(input$username) |> tolower()
+    
+    if (name == "") {
+      return()
+    }
+    
+    if (name %in% active_users()) {
+      showNotification(
+        "This username is already being used.",
+        type = "error"
+      )
+      
+      return()
+    }
+    
+    active_users(
+      c(active_users(), name)
+    )
+    
+    username(name)
+     
+    current(1)
+    
+    finished(FALSE)
+  
+  })
+  
+  
+  # Card
   
   output$card <- renderUI({
     
+    req(username())
+    
+    if (finished()) {
+      return(NULL)
+    }
+    
     i <- current()
     
-    card <- cards[i, ]
+    user_cards <- get_cards() %>% filter(user == username())
+    
+    if (nrow(user_cards) == 0 || i > nrow(user_cards)) {
+      return(
+        div(
+          "No cards found for this username."
+        )
+      )
+    }
+    
+    card <- user_cards[i, ]
+    
     
     div(
       class = "card",
@@ -71,23 +124,48 @@ server <- function(input, output, session) {
   })
   
   
+  # Swipe
+  
   observeEvent(input$swipe, {
+    
+    req(username())
+    
+    user_cards <- get_cards() %>% filter(user == username())
     
     i <- current()
     
     direction <- input$swipe$direction
     
+    
     print(
       paste(
-        cards$name[i],
+        username(),
+        user_cards$name[i],
         "->",
         direction
       )
     )
     
-    if (i < nrow(cards)) {
+    
+    if (i < nrow(user_cards)) {
       current(i + 1)
+    } else {
+      finished(TRUE)
     }
+    
   })
-  session$onSessionEnded(function() { stopApp() })
+  
+  session$onSessionEnded(function() {
+    
+    name <- isolate(username())
+    
+    if (!is.null(name)) {
+      
+      active_users(
+        setdiff(isolate(active_users()), name)
+      )
+      
+    }
+    
+  })
 }
