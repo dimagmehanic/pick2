@@ -1,0 +1,42 @@
+---
+title: "data_prep"
+format: html
+---
+
+```{r, echo=FALSE, results='hide'}
+library(ayuda)
+```
+
+Raw data location folder
+```{r}
+pick2_dir <- file.path("/home", whoami(), "data", "raw", "pick2")
+pick2 <- leer(pick2_dir)
+pick2$leer("titlep_ratings") %>% nrow()
+```
+Connect to a Postgres database
+```{r}
+pg <- leer("postgres", database="postgres", port=5432, host="postgres", user="postgres")$con()
+```
+Create a new database
+```{sql connection=pg}
+CREATE DATABASE pick2;
+```
+Remove connection
+```{r}
+rm(pg)
+```
+Connect to the new database
+```{r}
+con <- leer("pick2", database="postgres", port=5432, host="postgres", user="postgres")
+con$write_chunked("/home/rstudio/data/raw/pick2/titlep_ratings.tsv", db_args=list(overwrite = TRUE) )
+
+con$leer("titlep_ratings") %>%
+  summarise(n = n()) %>%
+  collect()
+
+for (file in list.files(pick2_dir, full.names = TRUE)){
+  print(file)
+} 
+```
+
+
