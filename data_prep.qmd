@@ -4,51 +4,138 @@ format: html
 ---
 
 ```{r, echo=FALSE, results='hide'}
-library(ayuda)
+library(ayuda) 
+library(reticulate)
+use_condaenv(condaenv = "myenv")
+
+scripts <-import("scripts") 
+ 
 ```
 
 Raw data location folder
+
 ```{r}
-pick2_dir <- file.path("/home", whoami(), "data", "raw", "pick2")
+pick2_dir <- file.path("/Users", whoami(), "data", "raw", "imdb")
 pick2 <- leer(pick2_dir)
 pick2$list()
 ```
+
 Connect to a Postgres database
+
 ```{r}
-pg <- leer("postgres", database="postgres", port=5432, host="postgres", user="postgres")$con()
+# pg <- leer("postgres", database = "postgres", port = 5432, 
+#            host = "localhost", 
+#            user = "postgres")$con()
 ```
+
 Create a new database
-```{sql connection=pg}
-CREATE DATABASE pick2;
+
+```{r}
+# DBI::dbExecute(pg, "CREATE DATABASE pick2")
+# DBI::dbExecute(pg, "CREATE DATABASE imdb")
 ```
+
 Remove connection
+
 ```{r}
-rm(pg)
+# rm(pg)
 ```
+
 Connect to the new database
-```{r}
-con <- leer("pick2", database="postgres", port=5432, host="postgres", user="postgres")
-
-for (file in list.files(pick2_dir, full.names = TRUE)){
-  print(file) 
-  con$write_chunked(file,
-                  db_args=list(overwrite = TRUE) )
-} 
-con$list()
-```
-
 
 ```{r}
-basics <- con$leer("title_basics") %>% 
-  filter(titleType == "movie") %>% 
-  mutate(year= as.numeric(na_if(startYear, "\\N")),
-         dur=as.numeric(na_if(runtimeMinutes, "\\N")),
-         genres=ifelse(genres == "\\N", "", genres )) %>% 
-  # filter(year>=1990) %>%
-  # summarise(n=n( ), mean=mean(dur, na.rm = TRUE), min=min(dur, na.rm = TRUE), max=max(dur, na.rm = TRUE)) %>% 
-  filter(dur>1000) %>% 
-  collect()
+con_imdb <- leer("imdb", 
+            database = "postgres", 
+            port = 5432, 
+            host = "localhost", 
+            user = "postgres")
 
-basics %>% glimpse()
+# for (file in list.files(pick2_dir, full.names = TRUE)) {
+#   print(file)
+#   con_imdb$write_chunked(file,
+#                   db_args=list(overwrite = TRUE) )
+# }  
+
+con_imdb$list()
 ```
 
+Prepare first 250 movies for user data collection
+
+```{r}
+m250 <- con_imdb$leer("250") %>% 
+  mutate(fl250 = "Y",
+         title_join = str_to_lower(name) %>%
+           str_replace_all("[^[:alnum:]]", ""))
+
+imdb_link <- "https://www.imdb.com/title/"
+
+movies250 <- con_imdb$leer("title_basics") %>%  
+  filter( titleType %in% c("movie", "tvMovie")) %>%
+  mutate(year = as.numeric(na_if(startYear, "\\N")),
+         dur = as.numeric(na_if(runtimeMinutes, "\\N")),
+         genres = ifelse(genres == "\\N", "", genres ),
+         title_join = str_to_lower(primaryTitle) |>  
+           str_replace_all("[^[:alnum:]]", "")) %>%
+  filter(year >= 1900 & year <= 2025) %>%
+  select(tconst, titleType, primaryTitle, genres, year, title_join) %>%
+#   # ADD IMDB raitings
+   left_join(con_imdb$leer("title_ratings"), by = c("tconst")) %>% 
+  mutate(rate = as.numeric(averageRating),
+         votes = as.numeric(numVotes),
+         link = paste0(imdb_link, tconst)) %>%
+  # ADD 250 popular movies
+  inner_join(m250,
+             by = c("year", "title_join" )) %>%
+  select(-c("averageRating", "numVotes", "name")) %>%
+  filter(fl250 == "Y") %>% 
+  collect() %>% 
+  select(-c("fl250")) %>% 
+  arrange(is.na(rate), desc(rate),  desc(year), desc(votes))  
+
+# Check what movies did not match
+# m250 %>% collect() %>% left_join(movies250, by = c("title_join", "year")) %>% view()
+ 
+view(movies250) 
+```
+
+Search and scrape data using bing and python
+
+```{r}
+query <- "Finding HAPPY 2025 movie" 
+
+url_img <- paste0(
+  "https://www.bing.com/images/search?q=",
+  URLencode(paste(query, "poster"))
+)
+
+url_country <- paste0(
+  "https://www.bing.com/search?q=",
+  URLencode(paste(query, "country origin"))
+)
+
+html_img <- system2(
+  "curl",
+  c(
+    "-L",
+    "--user-agent", "Mozilla/5.0", 
+    url_img
+  ),
+  stdout = TRUE
+)
+
+html_country <- system2(
+  "curl",
+  c(
+    "-L",
+    "--user-agent", "Mozilla/5.0",
+    url_country
+  ),
+  stdout = TRUE
+)
+
+html_img_data <- paste(html_img, collapse = "\n")
+html_country_data <- paste(html_country, collapse = "\n")
+
+scripts$get_images(html_img_data) %>% length()
+
+```
